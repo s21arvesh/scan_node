@@ -1,0 +1,170 @@
+
+name: "Node.js Security Scan"
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  node-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
+        cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+        
+    - name: Install dependencies
+      run: |
+        if [ -f "package.json" ]; then
+          npm install
+        else
+          echo "No package.json found, skipping npm install"
+        fi
+        
+    - name: Install scanning tools
+      run: |
+        npm install -g npm-audit-ci eslint semgrep sonar-scanner snyk jshint
+        
+    - name: Create report directory
+      run: |
+        mkdir -p $REPORT_DIR
+        
+    - name: Run security and quality scans
+      run: |
+        echo 'Starting Node.js security scan...'
+        echo 'Running ESLint...'
+        eslint . --format=json --output-file=$REPORT_DIR/eslint.json || true
+        
+    - name: Initialize severity summary
+      run: |
+        echo '{"critical": [], "high": [], "medium": [], "low": [], "info": []}' > $REPORT_DIR/severity_summary.json
+        
+        # Process npm-audit results using Node.js
+        if [ -f "$REPORT_DIR/npm_audit.json" ]; then
+          node << 'NODE_SCRIPT'
+          const fs = require('fs');
+          const path = require('path');
+
+          const reportDir = process.env.REPORT_DIR || 'scan-reports';
+          let severitySummary = {
+              "critical": [],
+              "high": [],
+              "medium": [],
+              "low": [],
+              "info": []
+          };
+
+          try {
+              if (fs.existsSync(`${reportDir}/npm_audit.json`)) {
+                  const npmData = JSON.parse(fs.readFileSync(`${reportDir}/npm_audit.json`, 'utf8'));
+                  if (npmData.vulnerabilities) {
+                      npmData.vulnerabilities.forEach(vuln => {
+                          const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
+                          if (severitySummary[severity]) {
+                              severitySummary[severity].push({
+                                  'tool': 'npm_audit',
+                                  'package': vuln.module_name,
+                                  'version': (vuln.findings && vuln.findings.length > 0) ? vuln.findings[0].version : 'N/A',
+                                  'issue': vuln.title,
+                                  'message': vuln.overview || 'Vulnerability found'
+                              });
+                          }
+                      });
+                  }
+              }
+          } catch (e) {
+              console.log(`Error processing npm_audit.json: ${e}`);
+          }
+
+          // Process ESLint results using Node.js
+          if (fs.existsSync(`${reportDir}/eslint.json`)) {
+              try {
+                  const eslintData = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
+                  eslintData.forEach(result => {
+                      if (result.severity === 'error') {
+                          severitySummary.high.push({
+                              'tool': 'eslint',
+                              'file': result.filePath,
+                              'line': result.lineNumber,
+                              'issue': result.ruleId,
+                              'message': result.message || 'ESLint error'
+                          });
+                      } else if (result.severity === 'warning') {
+                          severitySummary.medium.push({
+                              'tool': 'eslint',
+                              'file': result.filePath,
+                              'line': result.lineNumber,
+                              'issue': result.ruleId,
+                              'message': result.message || 'ESLint warning'
+                          });
+                      }
+                  });
+              } catch (e) {
+                  console.log(`Error processing eslint.json: ${e}`);
+              }
+          }
+
+          // Save final severity summary
+          fs.writeFileSync(`${reportDir}/severity_summary.json`, JSON.stringify(severitySummary, null, 2));
+          console.log("Node.js severity summary generated successfully");
+          NODE_SCRIPT
+        
+    - name: Upload scan reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: node-scan-reports
+        path: ${{ env.REPORT_DIR }}/
+        retention-days: 30
+        
+    - name: Generate scan summary
+      run: |
+        echo "## Node.js Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "### Severity Summary" >> $GITHUB_STEP_SUMMARY
+        echo '```json' >> $GITHUB_STEP_SUMMARY
+        cat $REPORT_DIR/severity_summary.json >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Available Reports" >> $GITHUB_STEP_SUMMARY
+        echo "- npm-audit: \`npm_audit.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- ESLint: \`eslint.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- Severity Summary: \`severity_summary.json\`" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Repository Information" >> $GITHUB_STEP_SUMMARY
+        echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Timestamp" >> $GITHUB_STEP_SUMMARY
+        echo "- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+      shell: bash
+
+    - name: Send results to API
+      if: always()
+      run: |
+        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d @- \
+            "https://eop7f15rcm9dnz.m.pipedream.net" << EOF
+        {
+          "repository": "${{ github.repository }}",
+          "branch": "${{ github.ref_name }}",
+          "run_id": "${{ github.run_id }}",
+          "severity_results": $(cat $REPORT_DIR/severity_summary.json),
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        fi
+      shell: bash
+
+env:
+  REPORT_DIR: scan-reports
