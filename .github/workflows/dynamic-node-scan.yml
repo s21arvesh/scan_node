@@ -41,7 +41,7 @@ jobs:
         
     - name: Initialize severity summary
       run: |
-        echo '{{"critical": [], "high": [], "medium": [], "low": [], "info": []}}' > $REPORT_DIR/severity_summary.json
+        echo '{"critical": [], "high": [], "medium": [], "low": [], "info": []}' > $REPORT_DIR/severity_summary.json
         
         # Process npm-audit results
         if [ -f "$REPORT_DIR/npm_audit.json" ]; then
@@ -50,13 +50,13 @@ import json
 import os
 
 report_dir = os.environ.get('REPORT_DIR', 'scan-reports')
-severity_summary = {{
+severity_summary = {
     "critical": [],
     "high": [],
     "medium": [],
     "low": [],
     "info": []
-}}
+}
 
 try:
     with open(f'{report_dir}/npm_audit.json') as f:
@@ -64,15 +64,15 @@ try:
         for vuln in npm_data.get('vulnerabilities', []):
             severity = vuln.get('severity', 'unknown').lower()
             if severity in severity_summary:
-                severity_summary[severity].append({{
+                severity_summary[severity].append({
                     'tool': 'npm_audit',
                     'package': vuln.get('module_name'),
-                    'version': vuln.get('findings', [{}])[0].get('version') if vuln.get('findings') else 'N/A',
+                    'version': vuln.get('findings', [{}])[0].get('version') if vuln.get('findings') and len(vuln.get('findings', [])) > 0 else 'N/A',
                     'issue': vuln.get('title'),
                     'message': vuln.get('overview', 'Vulnerability found')
-                }})
+                })
 except Exception as e:
-    print(f"Error processing npm_audit.json: {{e}}")
+    print(f"Error processing npm_audit.json: {e}")
 
 # Process ESLint results
 if [ -f "$REPORT_DIR/eslint.json" ]; then
@@ -87,23 +87,23 @@ try:
         eslint_data = json.load(f)
         for result in eslint_data:
             if result.get('severity') == 'error':
-                severity_summary['high'].append({{
+                severity_summary['high'].append({
                     'tool': 'eslint',
                     'file': result.get('filePath'),
                     'line': result.get('lineNumber'),
                     'issue': result.get('ruleId'),
                     'message': result.get('message', 'ESLint error')
-                }})
+                })
             elif result.get('severity') == 'warning':
-                severity_summary['medium'].append({{
+                severity_summary['medium'].append({
                     'tool': 'eslint',
                     'file': result.get('filePath'),
                     'line': result.get('lineNumber'),
                     'issue': result.get('ruleId'),
                     'message': result.get('message', 'ESLint warning')
-                }})
+                })
 except Exception as e:
-    print(f"Error processing eslint.json: {{e}}")
+    print(f"Error processing eslint.json: {e}")
 
 EOF
         fi
@@ -123,21 +123,43 @@ EOF
         path: ${{ env.REPORT_DIR }}/
         retention-days: 30
         
+    - name: Generate scan summary
+      run: |
+        echo "## Node.js Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "### Severity Summary" >> $GITHUB_STEP_SUMMARY
+        echo '```json' >> $GITHUB_STEP_SUMMARY
+        cat $REPORT_DIR/severity_summary.json >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Available Reports" >> $GITHUB_STEP_SUMMARY
+        echo "- npm-audit: \`npm_audit.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- ESLint: \`eslint.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- Severity Summary: \`severity_summary.json\`" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Repository Information" >> $GITHUB_STEP_SUMMARY
+        echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Timestamp" >> $GITHUB_STEP_SUMMARY
+        echo "- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+      shell: bash
+
     - name: Send results to API
       if: always()
       run: |
         if [ -f "$REPORT_DIR/severity_summary.json" ]; then
-          curl -X POST \\
-            -H "Content-Type: application/json" \\
-            -d @- \\
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d @- \
             "https://eop7f15rcm9dnz.m.pipedream.net" << EOF
-        {{
-          "repository": "${{{{ github.repository }}}}",
-          "branch": "${{{{ github.ref_name }}}}",
-          "run_id": "${{{{ github.run_id }}}",
+        {
+          "repository": "${{ github.repository }}",
+          "branch": "${{ github.ref_name }}",
+          "run_id": "${{ github.run_id }}",
           "severity_results": $(cat $REPORT_DIR/severity_summary.json),
           "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        }}
+        }
         EOF
         fi
       shell: bash
