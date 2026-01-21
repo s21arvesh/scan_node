@@ -47,9 +47,8 @@ jobs:
       run: |
         echo '{"critical": [], "high": [], "medium": [], "low": [], "info": []}' > $REPORT_DIR/severity_summary.json
         
-        # Process npm-audit results using Node.js
-        if [ -f "$REPORT_DIR/npm_audit.json" ]; then
-          node << 'NODE_SCRIPT'
+        # Create Node.js processing script
+        cat > process_results.js << 'EOF'
 const fs = require('fs');
 const path = require('path');
 
@@ -84,7 +83,6 @@ try {
     console.log(`Error processing npm_audit.json: ${e}`);
 }
 
-// Process ESLint results using Node.js
 if (fs.existsSync(`${reportDir}/eslint.json`)) {
     try {
         const eslintData = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
@@ -112,12 +110,12 @@ if (fs.existsSync(`${reportDir}/eslint.json`)) {
     }
 }
 
-// Save final severity summary
 fs.writeFileSync(`${reportDir}/severity_summary.json`, JSON.stringify(severitySummary, null, 2));
 console.log("Node.js severity summary generated successfully");
-NODE_SCRIPT
-        fi
+EOF
         
+        # Run the processing script
+        node process_results.js
     - name: Upload scan reports
       uses: actions/upload-artifact@v4
       if: always()
