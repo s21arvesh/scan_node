@@ -49,80 +49,80 @@ jobs:
         
         # Create Node.js processing script
         cat > process_results.js << 'EOF'
-const fs = require('fs');
-const path = require('path');
+        const fs = require('fs');
+        const path = require('path');
 
-const reportDir = process.env.REPORT_DIR || 'scan-reports';
-let severitySummary = {
-    "critical": [],
-    "high": [],
-    "medium": [],
-    "low": [],
-    "info": []
-};
+        const reportDir = process.env.REPORT_DIR || 'scan-reports';
+        let severitySummary = {
+            "critical": [],
+            "high": [],
+            "medium": [],
+            "low": [],
+            "info": []
+        };
 
-try {
-    if (fs.existsSync(`${reportDir}/npm_audit.json`)) {
-        const npmData = JSON.parse(fs.readFileSync(`${reportDir}/npm_audit.json`, 'utf8'));
-        if (npmData.vulnerabilities) {
-            npmData.vulnerabilities.forEach(vuln => {
-                const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
-                if (severitySummary[severity]) {
-                    severitySummary[severity].push({
-                        'tool': 'npm_audit',
-                        'package': vuln.module_name,
-                        'version': (vuln.findings && vuln.findings.length > 0) ? vuln.findings[0].version : 'N/A',
-                        'issue': vuln.title,
-                        'message': vuln.overview || 'Vulnerability found'
+        try {
+            if (fs.existsSync(`${reportDir}/npm_audit.json`)) {
+                const npmData = JSON.parse(fs.readFileSync(`${reportDir}/npm_audit.json`, 'utf8'));
+                if (npmData.vulnerabilities) {
+                    npmData.vulnerabilities.forEach(vuln => {
+                        const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
+                        if (severitySummary[severity]) {
+                            severitySummary[severity].push({
+                                'tool': 'npm_audit',
+                                'package': vuln.module_name,
+                                'version': (vuln.findings && vuln.findings.length > 0) ? vuln.findings[0].version : 'N/A',
+                                'issue': vuln.title,
+                                'message': vuln.overview || 'Vulnerability found'
+                            });
+                        }
                     });
                 }
-            });
-        }
-    }
-} catch (e) {
-    console.log(`Error processing npm_audit.json: ${e}`);
-}
-
-if (fs.existsSync(`${reportDir}/eslint.json`)) {
-    try {
-        const eslintData = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
-        eslintData.forEach(result => {
-            if (result.severity === 'error') {
-                severitySummary.high.push({
-                    'tool': 'eslint',
-                    'file': result.filePath,
-                    'line': result.lineNumber,
-                    'issue': result.ruleId,
-                    'message': result.message || 'ESLint error'
-                });
-            } else if (result.severity === 'warning') {
-                severitySummary.medium.push({
-                    'tool': 'eslint',
-                    'file': result.filePath,
-                    'line': result.lineNumber,
-                    'issue': result.ruleId,
-                    'message': result.message || 'ESLint warning'
-                });
             }
-        });
-    } catch (e) {
-        console.log(`Error processing eslint.json: ${e}`);
-    }
-}
+        } catch (e) {
+            console.log(`Error processing npm_audit.json: ${e}`);
+        }
 
-fs.writeFileSync(`${reportDir}/severity_summary.json`, JSON.stringify(severitySummary, null, 2));
-console.log("Node.js severity summary generated successfully");
-EOF
-        
-        # Run the processing script
-        node process_results.js
-    - name: Upload scan reports
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: node-scan-reports
-        path: ${{ env.REPORT_DIR }}/
-        retention-days: 30
+        if (fs.existsSync(`${reportDir}/eslint.json`)) {
+            try {
+                const eslintData = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
+                eslintData.forEach(result => {
+                    if (result.severity === 'error') {
+                        severitySummary.high.push({
+                            'tool': 'eslint',
+                            'file': result.filePath,
+                            'line': result.lineNumber,
+                            'issue': result.ruleId,
+                            'message': result.message || 'ESLint error'
+                        });
+                    } else if (result.severity === 'warning') {
+                        severitySummary.medium.push({
+                            'tool': 'eslint',
+                            'file': result.filePath,
+                            'line': result.lineNumber,
+                            'issue': result.ruleId,
+                            'message': result.message || 'ESLint warning'
+                        });
+                    }
+                });
+            } catch (e) {
+                console.log(`Error processing eslint.json: ${e}`);
+            }
+        }
+
+        fs.writeFileSync(`${reportDir}/severity_summary.json`, JSON.stringify(severitySummary, null, 2));
+        console.log("Node.js severity summary generated successfully");
+        EOF
+                
+                # Run the processing script
+                node process_results.js
+            - name: Upload scan reports
+            uses: actions/upload-artifact@v4
+            if: always()
+            with:
+                name: node-scan-reports
+                path: ${{ env.REPORT_DIR }}/
+                retention-days: 30
         
     - name: Generate scan summary
       run: |
