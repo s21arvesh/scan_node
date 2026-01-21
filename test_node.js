@@ -1,14 +1,20 @@
-var fs = require("fs")          // ❌ var instead of const
-var path = require("path")      // ❌ var instead of const
+/* eslint-env node */
 
-function readFile(filePath) {   // ❌ no JSDoc / no type hints
-    data = fs.readFileSync(filePath) // ❌ implicit global, no error handling
-    console.log("File data:", data)  // ❌ console.log
-    return data
+// ❌ ERROR: no-undef
+console.log(notDefinedVariable);
+
+// ❌ ERROR: no-unused-vars
+function brokenFunction(unusedParam) {
+  return 42;
 }
 
-function unusedFunction() {     // ❌ unused function
-    let x = 10
+// ❌ ERROR: no-unreachable
+function unreachable() {
+  return;
+  console.log("This will never run");
 }
 
-readFile("test.txt")            // ❌ hardcoded path
+// ❌ ERROR: no-constant-condition
+while (true) {
+  break;
+}
