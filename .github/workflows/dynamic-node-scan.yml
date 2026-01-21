@@ -115,14 +115,15 @@ jobs:
         EOF
                 
                 # Run the processing script
-                node process_results.js
-            - name: Upload scan reports
-            uses: actions/upload-artifact@v4
-            if: always()
-            with:
-                name: node-scan-reports
-                path: ${{ env.REPORT_DIR }}/
-                retention-days: 30
+        node process_results.js
+        
+    - name: Upload scan reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: node-scan-reports
+        path: ${{ env.REPORT_DIR }}/
+        retention-days: 30
         
     - name: Generate scan summary
       run: |
