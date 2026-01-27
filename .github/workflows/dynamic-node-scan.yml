@@ -124,14 +124,20 @@ jobs:
                 console.log('ESLint data:', eslintData);
                 console.log('ESLint results count:', eslintData.length);
                 eslintData.forEach(result => {
-                    const severity = result.severity ? (result.severity === 2 ? 'high' : 'medium') : 'medium';
-                    if (severitySummary[severity]) {
-                        severitySummary[severity].push({
-                            'tool': 'eslint',
-                            'file': result.filePath,
-                            'line': result.line,
-                            'issue': result.ruleId,
-                            'message': result.message
+                    // Only add files that have actual issues
+                    if (result.errorCount > 0 || result.warningCount > 0) {
+                        result.messages.forEach(message => {
+                            const severity = message.severity ? (message.severity === 2 ? 'high' : 'medium') : 'medium';
+                            if (severitySummary[severity]) {
+                                severitySummary[severity].push({
+                                    'tool': 'eslint',
+                                    'file': result.filePath,
+                                    'line': message.line || 'N/A',
+                                    'column': message.column || 'N/A',
+                                    'issue': message.ruleId || 'eslint-rule',
+                                    'message': message.message
+                                });
+                            }
                         });
                     }
                 });
