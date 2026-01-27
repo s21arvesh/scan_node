@@ -31,7 +31,7 @@ jobs:
         
     - name: Install scanning tools
       run: |
-        npm install -g npm-audit-ci eslint semgrep sonar-scanner snyk jshint
+        npm install -g npm-audit-ci eslint semgrep snyk jshint plato retire
         
     - name: Create report directory
       run: |
@@ -50,13 +50,15 @@ jobs:
           echo 'No package.json found - creating dummy one for testing'
           echo '{"name": "test-project", "version": "1.0.0"}' > package.json
         fi
+        echo 'Creating ESLint configuration...'
+        echo 'export default [];' > eslint.config.js
         echo 'JavaScript files found:'
         find . -name "*.js" -type f | head -10
         echo '=== Running Scan Commands ==='
         echo 'Running ESLint...'
         eslint . --format=json --output-file=$REPORT_DIR/eslint.json || true
         echo 'Running Plato Complexity Analysis...'
-        plato -r -d $REPORT_DIR/plato.json . || true
+        plato -r -d $REPORT_DIR/plato-report . || true
         echo '=== Scan Commands Completed ==='
         echo 'Report directory contents after scans:'
         ls -la $REPORT_DIR/
@@ -198,6 +200,26 @@ jobs:
                 });
             } catch (e) {
                 console.log(`Error processing jshint.json: ${e}`);
+            }
+        }
+
+        // Process Plato results
+        if (fs.existsSync(`${reportDir}/plato-report/index.json`)) {
+            try {
+                const platoData = JSON.parse(fs.readFileSync(`${reportDir}/plato-report/index.json`, 'utf8'));
+                Object.keys(platoData.reports).forEach(file => {
+                    const report = platoData.reports[file];
+                    if (report.complexity && report.complexity.aggregate.complexity.cyclomatic > 10) {
+                        severitySummary.medium.push({
+                            'tool': 'plato',
+                            'file': file,
+                            'issue': 'High complexity',
+                            'message': `Cyclomatic complexity: ${report.complexity.aggregate.complexity.cyclomatic}`
+                        });
+                    }
+                });
+            } catch (e) {
+                console.log(`Error processing plato report: ${e}`);
             }
         }
 
