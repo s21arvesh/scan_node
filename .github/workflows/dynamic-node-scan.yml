@@ -60,11 +60,25 @@ jobs:
             "info": []
         };
         
+        console.log('=== DEBUG: Node.js Severity Summary Generation ===');
+        console.log('Report directory:', reportDir);
+        console.log('Files in report directory:');
+        try {
+            const files = fs.readdirSync(reportDir);
+            console.log(files);
+        } catch (e) {
+            console.log('Error reading directory:', e);
+        }
+        
         // Process npm audit results
+        console.log('=== DEBUG: Checking npm_audit.json ===');
         if (fs.existsSync(`${reportDir}/npm_audit.json`)) {
+            console.log('npm_audit.json found, processing...');
             try {
                 const npmData = JSON.parse(fs.readFileSync(`${reportDir}/npm_audit.json`, 'utf8'));
+                console.log('npm audit data:', npmData);
                 if (npmData.vulnerabilities) {
+                    console.log('Found vulnerabilities:', npmData.vulnerabilities.length);
                     npmData.vulnerabilities.forEach(vuln => {
                         const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
                         if (severitySummary[severity]) {
@@ -84,9 +98,13 @@ jobs:
         }
         
         // Process ESLint results
+        console.log('=== DEBUG: Checking eslint.json ===');
         if (fs.existsSync(`${reportDir}/eslint.json`)) {
+            console.log('eslint.json found, processing...');
             try {
                 const eslintData = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
+                console.log('ESLint data:', eslintData);
+                console.log('ESLint results count:', eslintData.length);
                 eslintData.forEach(result => {
                     const severity = result.severity ? (result.severity === 2 ? 'high' : 'medium') : 'medium';
                     if (severitySummary[severity]) {
@@ -168,6 +186,14 @@ jobs:
         }
 
         // Save severity summary
+        console.log('=== DEBUG: Final Severity Summary ===');
+        console.log('Critical:', severitySummary.critical.length);
+        console.log('High:', severitySummary.high.length);
+        console.log('Medium:', severitySummary.medium.length);
+        console.log('Low:', severitySummary.low.length);
+        console.log('Info:', severitySummary.info.length);
+        console.log('Final summary:', JSON.stringify(severitySummary, null, 2));
+        
         fs.writeFileSync(`${reportDir}/severity_summary.json`, JSON.stringify(severitySummary, null, 2));
         console.log("Node.js severity summary generated successfully");
         EOF
@@ -200,25 +226,6 @@ jobs:
         
         echo "### Timestamp" >> $GITHUB_STEP_SUMMARY
         echo "- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
-      shell: bash
-
-    - name: Send results to API
-      if: always()
-      run: |
-        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            -d @- \
-            "https://eop7f15rcm9dnz.m.pipedream.net" << EOF
-        {
-          "repository": "${{ github.repository }}",
-          "branch": "${{ github.ref_name }}",
-          "run_id": "${{ github.run_id }}",
-          "severity_results": $(cat $REPORT_DIR/severity_summary.json),
-          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        }
-        EOF
-        fi
       shell: bash
 
 env:
