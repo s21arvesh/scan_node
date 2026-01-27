@@ -40,10 +40,26 @@ jobs:
     - name: Run security and quality scans
       run: |
         echo 'Starting Node.js security scan...'
+        echo 'Current directory contents:'
+        ls -la
+        echo 'Looking for package.json:'
+        if [ -f "package.json" ]; then
+          echo 'package.json found:'
+          cat package.json
+        else
+          echo 'No package.json found - creating dummy one for testing'
+          echo '{"name": "test-project", "version": "1.0.0"}' > package.json
+        fi
+        echo 'JavaScript files found:'
+        find . -name "*.js" -type f | head -10
+        echo '=== Running Scan Commands ==='
         echo 'Running ESLint...'
         eslint . --format=json --output-file=$REPORT_DIR/eslint.json || true
         echo 'Running Plato Complexity Analysis...'
         plato -r -d $REPORT_DIR/plato.json . || true
+        echo '=== Scan Commands Completed ==='
+        echo 'Report directory contents after scans:'
+        ls -la $REPORT_DIR/
         
     - name: Generate severity summary
       run: |
