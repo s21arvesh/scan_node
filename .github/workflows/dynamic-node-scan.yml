@@ -51,7 +51,7 @@ jobs:
           echo '{"name": "test-project", "version": "1.0.0"}' > package.json
         fi
         echo 'Creating ESLint configuration...'
-        echo 'export default [];' > eslint.config.js
+        echo 'module.exports = [];' > eslint.config.js
         echo 'JavaScript files found:'
         find . -name "*.js" -type f | head -10
         echo '=== Running Scan Commands ==='
