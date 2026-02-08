@@ -2,10 +2,6 @@
 name: "Node.js Security Scan"
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, master, develop ]
-  pull_request:
-    branches: [ main, master, develop ]
 
 jobs:
   node-scan:
@@ -31,12 +27,12 @@ jobs:
         
     - name: Install scanning tools
       run: |
-        npm install -g npm-audit-ci eslint semgrep snyk jshint plato retire
+        npm install -g eslint semgrep snyk jshint plato retire
         
     - name: Create report directory
       run: |
         mkdir -p $REPORT_DIR
-        
+
     - name: Run security and quality scans
       run: |
         echo 'Starting Node.js security scan...'
@@ -55,10 +51,21 @@ jobs:
         echo 'JavaScript files found:'
         find . -name "*.js" -type f | head -10
         echo '=== Running Scan Commands ==='
+        echo 'Running NPM Audit...'
+        npm install --package-lock-only || true
+        npm audit --json > $REPORT_DIR/npm_audit.json || true
         echo 'Running ESLint...'
-        eslint . --format=json --output-file=$REPORT_DIR/eslint.json || true
+        eslint . -f json -o $REPORT_DIR/eslint.json || true
+        echo 'Running JavaScript Copy-Paste Detector...'
+        jscpd . --reporters json --output $REPORT_DIR || true
+        echo 'Running Retire.js Scanner...'
+        retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
         echo 'Running Plato Complexity Analysis...'
         plato -r -d $REPORT_DIR/plato-report . || true
+        ls -la $REPORT_DIR/plato-report || true
+        cat $REPORT_DIR/plato-report/report.json | head -20 || echo "❌ Plato report.json missing"
+        echo 'Running JSDoc Documentation...'
+        jsdoc . -X > $REPORT_DIR/jsdoc.json || true
         echo '=== Scan Commands Completed ==='
         echo 'Report directory contents after scans:'
         ls -la $REPORT_DIR/
