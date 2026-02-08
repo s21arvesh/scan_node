@@ -1,6 +1,5 @@
-function doStuff(x) {
-  // long block of repeated code
-  console.log(x);
-  console.log(x);
-  // … more lines …
+function longDuplicate2() {
+  console.log("dup"); console.log("dup");
+  console.log("dup"); console.log("dup");
+  console.log("dup"); console.log("dup");
 }
