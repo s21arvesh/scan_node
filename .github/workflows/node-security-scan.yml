@@ -90,7 +90,8 @@ jobs:
             rules: {
               "no-eval": "error",
               "no-unused-vars": "error",
-              "no-undef": "error"
+              "no-undef": "error",
+              "no-console": "warn"
             }
           }
         ];
@@ -98,12 +99,16 @@ jobs:
 
     - name: Run ESLint
       run: |
-        eslint "**/*.js" --config eslint.config.js -f json -o $REPORT_DIR/eslint.json || true
-        test -f $REPORT_DIR/eslint.json || echo "[]" > $REPORT_DIR/eslint.json
+        echo "JS files to lint:"
+        find . -name "*.js"
+
+        eslint .           --ext .js           --config eslint.config.js           -f json           -o $REPORT_DIR/eslint.json || true
+
+        cat $REPORT_DIR/eslint.json
         
     - name: Run jscpd
       run: |
-        jscpd . --reporters json --output $REPORT_DIR/jscpd || true
+        jscpd .           --reporters json           --output $REPORT_DIR/jscpd           --min-tokens 10           --min-lines 3           --threshold 5 || true
         cp $REPORT_DIR/jscpd/jscpd-report.json $REPORT_DIR/jscpd.json || true
         
     - name: Run Retire.js
@@ -190,18 +195,26 @@ jobs:
           console.log('Found jscpd.json');
           try {
             const jscpdData = JSON.parse(fs.readFileSync(`${reportDir}/jscpd.json`, 'utf8'));
+            console.log('Jscpd raw data:', JSON.stringify(jscpdData, null, 2));
             if (jscpdData.duplicates && Array.isArray(jscpdData.duplicates)) {
-              jscpdData.duplicates.forEach(dup => {
+              console.log(`Jscpd found ${jscpdData.duplicates.length} duplicates before filtering`);
+              jscpdData.duplicates.forEach((dup, index) => {
                 if (dup && dup.firstFile && dup.secondFile) {
-                  summary['medium'].push({
-                    tool: 'jscpd',
-                    file: `${dup.firstFile.name} <-> ${dup.secondFile.name}`,
-                    issue: 'code-duplication',
-                    message: `${dup.tokens} duplicated tokens (${dup.lines} lines)`
-                  });
+                  console.log(`Processing duplicate ${index + 1}: ${dup.firstFile.name} <-> ${dup.secondFile.name}, tokens: ${dup.tokens}, lines: ${dup.lines}`);
+                  // Only add significant duplicates (more than 5 lines)
+                  if (dup.lines > 5) {
+                    summary['medium'].push({
+                      tool: 'jscpd',
+                      file: `${dup.firstFile.name} <-> ${dup.secondFile.name}`,
+                      issue: 'code-duplication',
+                      message: `${dup.tokens} duplicated tokens (${dup.lines} lines)`
+                    });
+                  } else {
+                    console.log(`Skipping small duplicate: ${dup.lines} lines`);
+                  }
                 }
               });
-              console.log(`Found ${jscpdData.duplicates.length} code duplications`);
+              console.log(`Added ${summary['medium'].filter(item => item.tool === 'jscpd').length} significant jscpd findings`);
             }
           } catch (e) {
             console.log('Error processing jscpd.json:', e.message);
