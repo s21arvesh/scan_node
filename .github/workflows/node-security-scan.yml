@@ -125,31 +125,53 @@ jobs:
 
         // npm audit
         if (fs.existsSync(`${reportDir}/npm_audit.json`)) {
-          const data = JSON.parse(fs.readFileSync(`${reportDir}/npm_audit.json`, 'utf8'));
-          if (data.vulnerabilities) {
-            Object.values(data.vulnerabilities).forEach(v => {
-              summary[v.severity || 'low'].push({
-                tool: 'npm_audit',
-                issue: v.name,
-                severity: v.severity
+          console.log('Found npm_audit.json');
+          try {
+            const data = JSON.parse(fs.readFileSync(`${reportDir}/npm_audit.json`, 'utf8'));
+            if (data.vulnerabilities) {
+              Object.values(data.vulnerabilities).forEach(v => {
+                if (v && v.severity) {
+                  summary[v.severity || 'low'].push({
+                    tool: 'npm_audit',
+                    issue: v.name || 'unknown',
+                    severity: v.severity
+                  });
+                }
               });
-            });
+              console.log(`Processed ${Object.keys(data.vulnerabilities).length} vulnerabilities`);
+            }
+          } catch (e) {
+            console.log('Error processing npm_audit.json:', e.message);
           }
+        } else {
+          console.log('npm_audit.json not found');
         }
 
         // eslint
         if (fs.existsSync(`${reportDir}/eslint.json`)) {
-          const eslint = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
-          eslint.forEach(file => {
-            file.messages.forEach(m => {
-              summary[m.severity === 2 ? 'high' : 'medium'].push({
-                tool: 'eslint',
-                file: file.filePath,
-                issue: m.ruleId,
-                message: m.message
-              });
+          console.log('Found eslint.json');
+          try {
+            const eslint = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
+            eslint.forEach(file => {
+              if (file && file.messages) {
+                file.messages.forEach(m => {
+                  if (m && m.severity !== undefined) {
+                    summary[m.severity === 2 ? 'high' : 'medium'].push({
+                      tool: 'eslint',
+                      file: file.filePath || 'unknown',
+                      issue: m.ruleId || 'unknown',
+                      message: m.message || 'no message'
+                    });
+                  }
+                });
+              }
             });
-          });
+            console.log(`Processed ${eslint.length} ESLint files`);
+          } catch (e) {
+            console.log('Error processing eslint.json:', e.message);
+          }
+        } else {
+          console.log('eslint.json not found');
         }
 
         fs.writeFileSync(
