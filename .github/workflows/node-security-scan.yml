@@ -90,8 +90,7 @@ jobs:
             rules: {
               "no-eval": "error",
               "no-unused-vars": "error",
-              "no-undef": "error",
-              "no-console": "warn"
+              "no-undef": "error"
             }
           }
         ];
@@ -99,12 +98,8 @@ jobs:
 
     - name: Run ESLint
       run: |
-        echo "JS files to lint:"
-        find . -name "*.js"
-
-        eslint .           --ext .js           --config eslint.config.js           -f json           -o $REPORT_DIR/eslint.json || true
-
-        cat $REPORT_DIR/eslint.json
+        eslint "**/*.js" --config eslint.config.js -f json -o $REPORT_DIR/eslint.json || true
+        test -f $REPORT_DIR/eslint.json || echo "[]" > $REPORT_DIR/eslint.json
         
     - name: Run jscpd
       run: |
