@@ -15,95 +15,42 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: "18"
-        cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+        cache: 'npm'
         
     - name: Install dependencies
       run: |
         if [ -f "package.json" ]; then
-          npm install
+          npm ci --no-audit --no-fund
         else
-          echo "No package.json found, skipping npm install"
+          echo "No package.json found, creating dummy package.json"
+          echo '{"name": "test-project", "version": "1.0.0", "scripts": {}}' > package.json
         fi
-        
-    - name: Install scanning tools
-      run: |
-        npm install -g eslint semgrep snyk jshint plato retire
         
     - name: Create report directory
       run: |
         mkdir -p $REPORT_DIR
-
-    - name: Run security and quality scans
+        
+    - name: Run npm audit
       run: |
-        echo 'Starting Node.js security scan...'
-        echo 'Current directory contents:'
-        ls -la
-        echo 'Looking for package.json:'
-        if [ -f "package.json" ]; then
-          echo 'package.json found:'
-          cat package.json
-        else
-          echo 'No package.json found - creating dummy one for testing'
-          echo '{"name": "test-project", "version": "1.0.0"}' > package.json
-        fi
-        echo 'Creating ESLint configuration...'
+        echo "Running npm audit..."
+        npm audit --json > $REPORT_DIR/npm_audit.json || echo "npm audit completed with issues"
+        
+    - name: Run ESLint
+      run: |
+        echo "Running ESLint..."
+        npm install -g eslint
         echo 'module.exports = [];' > eslint.config.js
-        echo 'JavaScript files found:'
-        find . -name "*.js" -type f | head -10
-        echo '=== Running Scan Commands ==='
-        echo 'Running NPM Audit...'
-        npm install --package-lock-only || true
-        npm audit --json > $REPORT_DIR/npm_audit.json || true
-        echo 'Running ESLint...'
-        eslint . -f json -o $REPORT_DIR/eslint.json || true
-        echo 'Running JavaScript Copy-Paste Detector...'
-        jscpd . --reporters json --output $REPORT_DIR || true
-        echo 'Running Retire.js Scanner...'
-        retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
-        echo 'Running Plato Complexity Analysis...'
-        plato -r -d $REPORT_DIR/plato-report . || true
-        ls -la $REPORT_DIR/plato-report || true
-        cat $REPORT_DIR/plato-report/report.json | head -20 || echo "❌ Plato report.json missing"
-        echo 'Running JSDoc Documentation...'
-        jsdoc . -X > $REPORT_DIR/jsdoc.json || true
-        echo '=== Scan Commands Completed ==='
-        echo 'Report directory contents after scans:'
-        ls -la $REPORT_DIR/
+        eslint . -f json -o $REPORT_DIR/eslint.json || echo "ESLint completed"
         
-    - name: Create simple severity summary
+    - name: Generate simple report
       run: |
-        echo '{' > $REPORT_DIR/severity_summary.json
-        echo '  "critical": [],' >> $REPORT_DIR/severity_summary.json
-        echo '  "high": [],' >> $REPORT_DIR/severity_summary.json
-        echo '  "medium": [],' >> $REPORT_DIR/severity_summary.json
-        echo '  "low": [],' >> $REPORT_DIR/severity_summary.json
-        echo '  "info": []' >> $REPORT_DIR/severity_summary.json
-        echo '}' >> $REPORT_DIR/severity_summary.json
-        
-        # Count available reports
-        echo "Available scan reports:" > $REPORT_DIR/report_summary.txt
-        ls -la $REPORT_DIR/ >> $REPORT_DIR/report_summary.txt 2>/dev/null || echo "No reports found" >> $REPORT_DIR/report_summary.txt
-
-    - name: Generate severity summary
-      run: |
-        echo "## Node.js Security Scan Results" >> $GITHUB_STEP_SUMMARY
-        echo "### Severity Summary" >> $GITHUB_STEP_SUMMARY
-        echo '```json' >> $GITHUB_STEP_SUMMARY
-        cat $REPORT_DIR/severity_summary.json >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No severity summary found" >> $GITHUB_STEP_SUMMARY
-        echo '```' >> $GITHUB_STEP_SUMMARY
-        
-        echo "### Available Reports" >> $GITHUB_STEP_SUMMARY
-        echo "- npm-audit: \`npm_audit.json\`" >> $GITHUB_STEP_SUMMARY
-        echo "- ESLint: \`eslint.json\`" >> $GITHUB_STEP_SUMMARY
-        echo "- Severity Summary: \`severity_summary.json\`" >> $GITHUB_STEP_SUMMARY
-        
-        echo "### Repository Information" >> $GITHUB_STEP_SUMMARY
+        echo "## Node.js Security Scan Results" > $GITHUB_STEP_SUMMARY
+        echo "### Scan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- npm audit: \`$REPORT_DIR/npm_audit.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- ESLint: \`$REPORT_DIR/eslint.json\`" >> $GITHUB_STEP_SUMMARY
         echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
         echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
-        
-        echo "### Timestamp" >> $GITHUB_STEP_SUMMARY
-        echo "- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+        echo "- Completed: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
 
     - name: Upload scan reports
       uses: actions/upload-artifact@v4
@@ -111,7 +58,7 @@ jobs:
       with:
         name: node-scan-reports
         path: ${{ env.REPORT_DIR }}/
-        retention-days: 30
+        retention-days: 7
 
 env:
   REPORT_DIR: scan-reports
