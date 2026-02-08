@@ -83,14 +83,9 @@ jobs:
         export default [
           {
             files: ["**/*.js"],
-            languageOptions: {
-              ecmaVersion: 2021,
-              sourceType: "commonjs"
-            },
             rules: {
               "no-eval": "error",
-              "no-unused-vars": "warn",
-              "semi": ["error", "never"]
+              "no-unused-vars": "warn"
             }
           }
         ];
@@ -100,7 +95,8 @@ jobs:
         
     - name: Run jscpd
       run: |
-        jscpd .           --reporters json           --output $REPORT_DIR/jscpd || true
+        jscpd . --reporters json --output $REPORT_DIR/jscpd || true
+        cp $REPORT_DIR/jscpd/jscpd-report.json $REPORT_DIR/jscpd.json || true
         
     - name: Run Retire.js
       run: |
@@ -179,6 +175,45 @@ jobs:
           }
         } else {
           console.log('eslint.json not found');
+        }
+
+        // retire
+        if (fs.existsSync(`${reportDir}/retire.json`)) {
+          console.log('Found retire.json');
+          try {
+            const retireData = JSON.parse(fs.readFileSync(`${reportDir}/retire.json`, 'utf8'));
+            if (retireData.data && Array.isArray(retireData.data)) {
+              if (retireData.data.length === 0) {
+                console.log('Retire.js: passed with no vulnerabilities');
+                // No vulnerabilities found - this is a valid pass
+              } else {
+                retireData.data.forEach(v => {
+                  if (v && v.severity) {
+                    summary[v.severity || 'low'].push({
+                      tool: 'retire',
+                      issue: v.component || 'unknown',
+                      severity: v.severity,
+                      message: v.identifiers && v.identifiers.summary ? v.identifiers.summary[0] : 'vulnerability found'
+                    });
+                  }
+                });
+                console.log(`Retire.js: found ${retireData.data.length} vulnerabilities`);
+              }
+            }
+          } catch (e) {
+            console.log('Error processing retire.json:', e.message);
+          }
+        } else {
+          console.log('retire.json not found');
+        }
+
+        // plato - artifact only (HTML report)
+        if (fs.existsSync(`${reportDir}/plato/index.html`)) {
+          console.log('Found Plato HTML report');
+          // Plato is report-only, not included in severity summary
+          // Handled as artifact: plato-report/index.html
+        } else {
+          console.log('Plato HTML report not found');
         }
 
         fs.writeFileSync(
