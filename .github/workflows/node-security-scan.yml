@@ -79,32 +79,36 @@ jobs:
         
     - name: Create ESLint config
       run: |
-        cat <<'EOF' > eslint.config.js
-        export default [
-          {
-            files: ["**/*.js"],
-            languageOptions: {
-              ecmaVersion: "latest",
-              sourceType: "commonjs"
-            },
-            rules: {
-              "no-eval": "error",
-              "no-unused-vars": "error",
-              "no-undef": "error",
-              "no-console": "warn"
-            }
+        cat > .eslintrc.json << 'EOF'
+        {
+          "env": {
+            "node": true,
+            "es2021": true
+          },
+          "extends": ["eslint:recommended"],
+          "rules": {
+            "no-eval": "error",
+            "no-unused-vars": "error",
+            "no-undef": "error",
+            "no-console": "warn"
           }
-        ];
+        }
         EOF
 
     - name: Run ESLint
       continue-on-error: true
       run: |
         echo "Running ESLint (non-blocking)..."
-        eslint .           --ext .js           --config eslint.config.js           -f json           -o $REPORT_DIR/eslint.json || true
+        eslint .           --ext .js           -f json           -o $REPORT_DIR/eslint.json || true
 
         echo "ESLint output:"
-        cat $REPORT_DIR/eslint.json
+        cat $REPORT_DIR/eslint.json || echo "No ESLint output file found"
+        
+        # Ensure file exists for artifacts
+        if [ ! -f "$REPORT_DIR/eslint.json" ]; then
+          echo "[]" > $REPORT_DIR/eslint.json
+          echo "Created empty eslint.json for artifacts"
+        fi
         
     - name: Run jscpd
       run: |
