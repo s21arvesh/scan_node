@@ -38,44 +38,9 @@ jobs:
       run: |
         mkdir -p $REPORT_DIR
         
-    - name: Run npm audit
-      run: |
-        set +e  # Don't exit on error
-        echo "Running npm audit..."
-        echo "Current directory: $(pwd)"
-        echo "Files in directory:"
-        ls -la
-        echo "=== NPM AUDIT START ==="
-        npm audit --json > $REPORT_DIR/npm_audit.json 2>&1 || echo "npm audit completed with issues"
-        echo "=== NPM AUDIT END ==="
-        echo "npm audit output:"
-        cat $REPORT_DIR/npm_audit.json || echo "No npm audit output found"
-        set -e  # Exit on error for subsequent steps
-        
-    - name: Create sample JS files
-      run: |
-        cat > app.js << 'EOF'
-        function add(a, b) {
-          return a + b
-        }
-
-        function risky(input) {
-          eval(input)
-        }
-
-        module.exports = { add, risky }
-        EOF
-
-        cat > utils.js << 'EOF'
-        function add(a, b) {
-          return a + b
-        }
-        module.exports = { add }
-        EOF
-        
     - name: Install scan tools
       run: |
-        npm install -g eslint jscpd retire plato jsdoc
+        npm install -g npm eslint jscpd retire plato jsdoc
         
     - name: Create ESLint config
       run: |
@@ -88,31 +53,31 @@ jobs:
           "extends": ["eslint:recommended"],
           "rules": {
             "no-eval": "error",
-            "no-unused-vars": "error"
+            "no-unused-vars": "error",
+            "no-console": "warn"
           }
         }
         EOF
 
-    - name: Run ESLint
-      run: |
+        # NPM Audit
+        npm install --package-lock-only || true
+        npm audit --json > $REPORT_DIR/npm_audit.json || true
+
+        # ESLint
         eslint . -f json -o $REPORT_DIR/eslint.json || true
-        
-    - name: Run jscpd
-      run: |
-        jscpd . --reporters json --output $REPORT_DIR/jscpd || true
+
+        # JSCPD
+        jscpd . --reporters json --output $REPORT_DIR || true
         cp $REPORT_DIR/jscpd/jscpd-report.json $REPORT_DIR/jscpd.json || true
-        
-    - name: Run Retire.js
-      run: |
-        retire           --js           --node           --outputformat json           --outputpath $REPORT_DIR/retire.json           . || true
-        
-    - name: Run Plato
-      run: |
-        plato -r -d $REPORT_DIR/plato app.js utils.js || true
-        
-    - name: Run JSDoc
-      run: |
-        jsdoc app.js utils.js -X > $REPORT_DIR/jsdoc.json || true
+
+        # Retire.js (FORCE JS scan)
+        retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
+
+        # Plato
+        plato -r -d $REPORT_DIR/plato . || true
+
+        # JSDoc (JSON MODE)
+        jsdoc . -X > $REPORT_DIR/jsdoc.json || true
         
     - name: Generate severity summary
       run: |
