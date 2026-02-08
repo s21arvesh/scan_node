@@ -99,7 +99,15 @@ jobs:
       continue-on-error: true
       run: |
         echo "Running ESLint (non-blocking)..."
-        eslint .           --ext .js           -f json           -o $REPORT_DIR/eslint.json || true
+        echo "Current directory:"
+        pwd
+        echo "All JS files:"
+        find . -name "*.js" -type f
+        echo "Files excluding node_modules:"
+        find . -name "*.js" -type f -not -path "./node_modules/*"
+        
+        echo "Running ESLint on specific files:"
+        eslint app.js utils.js           -f json           -o $REPORT_DIR/eslint.json || true
 
         echo "ESLint output:"
         cat $REPORT_DIR/eslint.json || echo "No ESLint output file found"
