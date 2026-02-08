@@ -341,12 +341,5 @@ jobs:
         ls -la $REPORT_DIR/ >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No reports directory found" >> $GITHUB_STEP_SUMMARY
         set -e  # Exit on error for subsequent steps
 
-    - name: Upload scan reports
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: node-scan-reports
-        path: scan-reports/
-
 env:
   REPORT_DIR: scan-reports
