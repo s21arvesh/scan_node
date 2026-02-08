@@ -70,17 +70,16 @@ jobs:
         eslint . --no-eslintrc -c .eslintrc.json -f json -o $REPORT_DIR/eslint.json --ignore-pattern node_modules/ || true
 
         # JSCPD
-        jscpd . --reporters json --output $REPORT_DIR --ignore "node_modules" || true
-        cp $REPORT_DIR/jscpd-report.json $REPORT_DIR/jscpd-report.json 2>/dev/null || true
+        jscpd . --reporters json --output $REPORT_DIR --min-lines 3 --min-tokens 25 --ignore "node_modules" || true
 
         # Retire.js
-        retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
+        retire --js --ignore node_modules --outputformat json --outputpath $REPORT_DIR/retire.json . || true
 
         # Plato
-        plato -r -d $REPORT_DIR/plato-report . || true
+        plato -r -x node_modules -d $REPORT_DIR/plato-report . || true
 
         # JSDoc
-        jsdoc . -r -X > $REPORT_DIR/jsdoc.json 2>/dev/null || true
+        find . -maxdepth 2 -name '*.js' -not -path './node_modules/*' | head -50 | xargs jsdoc -X > $REPORT_DIR/jsdoc.json 2>/dev/null || true
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents:"
         ls -la $REPORT_DIR/ || echo "Report directory not accessible"
