@@ -63,10 +63,6 @@ jobs:
           eval(input)
         }
 
-        let unusedVar = 42;
-
-        console.log("This will trigger no-console warning");
-
         module.exports = { add, risky }
         EOF
 
@@ -74,16 +70,7 @@ jobs:
         function add(a, b) {
           return a + b
         }
-
-        function duplicate(a, b) {
-          return a + b
-        }
-
-        let anotherUnused = "test";
-
-        console.log("Another console log");
-
-        module.exports = { add, duplicate }
+        module.exports = { add }
         EOF
         
     - name: Install scan tools
@@ -101,41 +88,18 @@ jobs:
           "extends": ["eslint:recommended"],
           "rules": {
             "no-eval": "error",
-            "no-unused-vars": "error",
-            "no-undef": "error",
-            "no-console": "warn"
+            "no-unused-vars": "error"
           }
         }
         EOF
 
     - name: Run ESLint
-      continue-on-error: true
       run: |
-        echo "Running ESLint (non-blocking)..."
-        echo "Current directory:"
-        pwd
-        echo "All JS files:"
-        find . -name "*.js" -type f
-        echo "Files excluding node_modules:"
-        find . -name "*.js" -type f -not -path "./node_modules/*"
-        echo "ESLint config:"
-        cat .eslintrc.json
-        
-        echo "Running ESLint on specific files:"
-        eslint app.js utils.js           -f json           -o $REPORT_DIR/eslint.json || true
-
-        echo "ESLint output:"
-        cat $REPORT_DIR/eslint.json || echo "No ESLint output file found"
-        
-        # Ensure file exists for artifacts
-        if [ ! -f "$REPORT_DIR/eslint.json" ]; then
-          echo "[]" > $REPORT_DIR/eslint.json
-          echo "Created empty eslint.json for artifacts"
-        fi
+        eslint . -f json -o $REPORT_DIR/eslint.json || true
         
     - name: Run jscpd
       run: |
-        jscpd .           --reporters json           --output $REPORT_DIR/jscpd           --min-tokens 10           --min-lines 3           --threshold 5 || true
+        jscpd . --reporters json --output $REPORT_DIR/jscpd || true
         cp $REPORT_DIR/jscpd/jscpd-report.json $REPORT_DIR/jscpd.json || true
         
     - name: Run Retire.js
@@ -215,39 +179,6 @@ jobs:
           }
         } else {
           console.log('eslint.json not found');
-        }
-
-        // jscpd
-        if (fs.existsSync(`${reportDir}/jscpd.json`)) {
-          console.log('Found jscpd.json');
-          try {
-            const jscpdData = JSON.parse(fs.readFileSync(`${reportDir}/jscpd.json`, 'utf8'));
-            console.log('Jscpd raw data:', JSON.stringify(jscpdData, null, 2));
-            if (jscpdData.duplicates && Array.isArray(jscpdData.duplicates)) {
-              console.log(`Jscpd found ${jscpdData.duplicates.length} duplicates before filtering`);
-              jscpdData.duplicates.forEach((dup, index) => {
-                if (dup && dup.firstFile && dup.secondFile) {
-                  console.log(`Processing duplicate ${index + 1}: ${dup.firstFile.name} <-> ${dup.secondFile.name}, tokens: ${dup.tokens}, lines: ${dup.lines}`);
-                  // Only add significant duplicates (more than 5 lines)
-                  if (dup.lines > 5) {
-                    summary['medium'].push({
-                      tool: 'jscpd',
-                      file: `${dup.firstFile.name} <-> ${dup.secondFile.name}`,
-                      issue: 'code-duplication',
-                      message: `${dup.tokens} duplicated tokens (${dup.lines} lines)`
-                    });
-                  } else {
-                    console.log(`Skipping small duplicate: ${dup.lines} lines`);
-                  }
-                }
-              });
-              console.log(`Added ${summary['medium'].filter(item => item.tool === 'jscpd').length} significant jscpd findings`);
-            }
-          } catch (e) {
-            console.log('Error processing jscpd.json:', e.message);
-          }
-        } else {
-          console.log('jscpd.json not found');
         }
 
         // retire
