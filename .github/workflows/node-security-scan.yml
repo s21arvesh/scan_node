@@ -79,29 +79,36 @@ jobs:
         
     - name: Run ESLint
       run: |
-        set +e  # Don't exit on error
-        echo "Running ESLint..."
-        echo "Creating ESLint config..."
-        echo 'module.exports = [];' > eslint.config.js
-        echo "=== ESLINT START ==="
-        eslint . -f json -o $REPORT_DIR/eslint.json 2>&1 || echo "ESLint completed with issues"
-        echo "=== ESLINT END ==="
-        echo "ESLint output:"
-        cat $REPORT_DIR/eslint.json || echo "No ESLint output found"
-        set -e  # Exit on error for subsequent steps
+        cat > eslint.config.js << 'EOF'
+        export default [
+          {
+            files: ["**/*.js"],
+            languageOptions: {
+              ecmaVersion: 2021,
+              sourceType: "commonjs"
+            },
+            rules: {
+              "no-eval": "error",
+              "no-unused-vars": "warn",
+              "semi": ["error", "never"]
+            }
+          }
+        ];
+        EOF
+
+        eslint . -f json -o $REPORT_DIR/eslint.json || true
         
     - name: Run jscpd
       run: |
-        jscpd . --reporters json --output $REPORT_DIR/jscpd-report.json || true
+        jscpd .           --reporters json           --output $REPORT_DIR/jscpd || true
         
     - name: Run Retire.js
       run: |
-        retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
+        retire           --js           --node           --outputformat json           --outputpath $REPORT_DIR/retire.json           . || true
         
     - name: Run Plato
       run: |
-        plato -r -d $REPORT_DIR/plato-report app.js utils.js || true
-        ls -la $REPORT_DIR/plato-report || true
+        plato -r -d $REPORT_DIR/plato app.js utils.js || true
         
     - name: Run JSDoc
       run: |
