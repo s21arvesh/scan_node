@@ -79,18 +79,21 @@ jobs:
         
     - name: Create ESLint config
       run: |
-        cat > .eslintrc.json << 'EOF'
-        {
-          "env": {
-            "node": true,
-            "es2021": true
-          },
-          "extends": ["eslint:recommended"],
-          "rules": {
-            "no-eval": "error",
-            "no-unused-vars": "error"
+        cat <<'EOF' > eslint.config.js
+        export default [
+          {
+            files: ["**/*.js"],
+            languageOptions: {
+              ecmaVersion: "latest",
+              sourceType: "commonjs"
+            },
+            rules: {
+              "no-eval": "error",
+              "no-unused-vars": "error",
+              "no-undef": "error"
+            }
           }
-        }
+        ];
         EOF
 
     - name: Run ESLint
