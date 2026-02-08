@@ -90,16 +90,21 @@ jobs:
             rules: {
               "no-eval": "error",
               "no-unused-vars": "error",
-              "no-undef": "error"
+              "no-undef": "error",
+              "no-console": "warn"
             }
           }
         ];
         EOF
 
     - name: Run ESLint
+      continue-on-error: true
       run: |
-        eslint "**/*.js" --config eslint.config.js -f json -o $REPORT_DIR/eslint.json || true
-        test -f $REPORT_DIR/eslint.json || echo "[]" > $REPORT_DIR/eslint.json
+        echo "Running ESLint (non-blocking)..."
+        eslint .           --ext .js           --config eslint.config.js           -f json           -o $REPORT_DIR/eslint.json || true
+
+        echo "ESLint output:"
+        cat $REPORT_DIR/eslint.json
         
     - name: Run jscpd
       run: |
