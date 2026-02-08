@@ -1,4 +1,5 @@
-// eslint-error-sample.js
-var a = 1;              // var rule violation
-console.log(a)          // missing semicolon
-eval("something");      // eval warning/error
+function risky(input) {
+  return eval(input)   // ❌ no-eval
+}
+
+let unused = 123       // ❌ no-unused-vars
