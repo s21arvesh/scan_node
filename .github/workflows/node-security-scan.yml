@@ -52,12 +52,35 @@ jobs:
         cat $REPORT_DIR/npm_audit.json || echo "No npm audit output found"
         set -e  # Exit on error for subsequent steps
         
+    - name: Create sample JS files
+      run: |
+        cat > app.js << 'EOF'
+        function add(a, b) {
+          return a + b
+        }
+
+        function risky(input) {
+          eval(input)
+        }
+
+        module.exports = { add, risky }
+        EOF
+
+        cat > utils.js << 'EOF'
+        function add(a, b) {
+          return a + b
+        }
+        module.exports = { add }
+        EOF
+        
+    - name: Install scan tools
+      run: |
+        npm install -g eslint jscpd retire plato jsdoc
+        
     - name: Run ESLint
       run: |
         set +e  # Don't exit on error
         echo "Running ESLint..."
-        echo "Installing ESLint globally..."
-        npm install -g eslint || echo "ESLint install failed, continuing..."
         echo "Creating ESLint config..."
         echo 'module.exports = [];' > eslint.config.js
         echo "=== ESLINT START ==="
@@ -66,6 +89,23 @@ jobs:
         echo "ESLint output:"
         cat $REPORT_DIR/eslint.json || echo "No ESLint output found"
         set -e  # Exit on error for subsequent steps
+        
+    - name: Run jscpd
+      run: |
+        jscpd . --reporters json --output $REPORT_DIR/jscpd-report.json || true
+        
+    - name: Run Retire.js
+      run: |
+        retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
+        
+    - name: Run Plato
+      run: |
+        plato -r -d $REPORT_DIR/plato-report app.js utils.js || true
+        ls -la $REPORT_DIR/plato-report || true
+        
+    - name: Run JSDoc
+      run: |
+        jsdoc app.js utils.js -X > $REPORT_DIR/jsdoc.json || true
         
     - name: Generate simple report
       run: |
@@ -85,11 +125,9 @@ jobs:
     - name: Upload scan reports
       uses: actions/upload-artifact@v4
       if: always()
-      continue-on-error: true
       with:
         name: node-scan-reports
-        path: ${{ env.REPORT_DIR }}/
-        retention-days: 7
+        path: scan-reports/
 
 env:
   REPORT_DIR: scan-reports
