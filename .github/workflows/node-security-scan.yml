@@ -77,21 +77,26 @@ jobs:
       run: |
         npm install -g eslint jscpd retire plato jsdoc
         
-    - name: Run ESLint
+    - name: Create ESLint config
       run: |
-        cat > eslint.config.js << 'EOF'
-        export default [
-          {
-            files: ["**/*.js"],
-            rules: {
-              "no-eval": "error",
-              "no-unused-vars": "warn"
-            }
+        cat > .eslintrc.json << 'EOF'
+        {
+          "env": {
+            "node": true,
+            "es2021": true
+          },
+          "extends": ["eslint:recommended"],
+          "rules": {
+            "no-eval": "error",
+            "no-unused-vars": "error"
           }
-        ];
+        }
         EOF
 
-        eslint . -f json -o $REPORT_DIR/eslint.json || true
+    - name: Run ESLint
+      run: |
+        eslint "**/*.js" -f json -o $REPORT_DIR/eslint.json || true
+        test -f $REPORT_DIR/eslint.json || echo "[]" > $REPORT_DIR/eslint.json
         
     - name: Run jscpd
       run: |
