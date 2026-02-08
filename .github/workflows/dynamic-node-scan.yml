@@ -15,12 +15,18 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: "18"
-        cache: 'npm'
+        cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || 'none' }}
         
     - name: Install dependencies
       run: |
         if [ -f "package.json" ]; then
-          npm ci --no-audit --no-fund
+          if [ -f "package-lock.json" ]; then
+            echo "Installing from lock file..."
+            npm ci --no-audit --no-fund
+          else
+            echo "No lock file found, running npm install..."
+            npm install --no-audit --no-fund
+          fi
         else
           echo "No package.json found, creating dummy package.json"
           echo '{"name": "test-project", "version": "1.0.0", "scripts": {}}' > package.json
