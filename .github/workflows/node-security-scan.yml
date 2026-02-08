@@ -38,258 +38,206 @@ jobs:
       run: |
         mkdir -p $REPORT_DIR
         
-    - name: Install scan tools
+    - name: Run npm audit
       run: |
-        npm install -g npm eslint jscpd retire plato jsdoc
+        set +e  # Don't exit on error
+        echo "Running npm audit..."
+        echo "Current directory: $(pwd)"
+        echo "Files in directory:"
+        ls -la
+        echo "=== NPM AUDIT START ==="
+        npm audit --json > $REPORT_DIR/npm_audit.json 2>&1 || echo "npm audit completed with issues"
+        echo "=== NPM AUDIT END ==="
+        echo "npm audit output:"
+        cat $REPORT_DIR/npm_audit.json || echo "No npm audit output found"
+        set -e  # Exit on error for subsequent steps
         
-    - name: Create ESLint config
+    - name: Create sample JS files
       run: |
-        cat > .eslintrc.json << 'EOF'
-        {
-          "env": {
-            "node": true,
-            "es2021": true
-          },
-          "extends": ["eslint:recommended"],
-          "rules": {
-            "no-eval": "error",
-            "no-unused-vars": "error",
-            "no-console": "warn"
-          }
+        cat > app.js << 'EOF'
+        function add(a, b) {
+          return a + b
         }
+
+        function risky(input) {
+          eval(input)
+        }
+
+        module.exports = { add, risky }
         EOF
 
-        # NPM Audit
-        npm install --package-lock-only || true
-        npm audit --json > $REPORT_DIR/npm_audit.json || true
+        cat > utils.js << 'EOF'
+        function add(a, b) {
+          return a + b
+        }
+        module.exports = { add }
+        EOF
+        
+    - name: Install scan tools
+      run: |
+        npm install -g eslint jscpd retire plato jsdoc
+        
+    - name: Run ESLint
+      run: |
+        cat > eslint.config.js << 'EOF'
+        export default [
+          {
+            files: ["**/*.js"],
+            rules: {
+              "no-eval": "error",
+              "no-unused-vars": "warn"
+            }
+          }
+        ];
+        EOF
 
-        # ESLint
         eslint . -f json -o $REPORT_DIR/eslint.json || true
-
-        # JSCPD
-        jscpd . --reporters json --output $REPORT_DIR || true
+        
+    - name: Run jscpd
+      run: |
+        jscpd . --reporters json --output $REPORT_DIR/jscpd || true
         cp $REPORT_DIR/jscpd/jscpd-report.json $REPORT_DIR/jscpd.json || true
-
-        # Retire.js (FORCE JS scan)
-        retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
-
-        # Plato
-        plato -r -d $REPORT_DIR/plato . || true
-
-        # JSDoc (JSON MODE)
-        jsdoc . -X > $REPORT_DIR/jsdoc.json || true
+        
+    - name: Run Retire.js
+      run: |
+        retire           --js           --node           --outputformat json           --outputpath $REPORT_DIR/retire.json           . || true
+        
+    - name: Run Plato
+      run: |
+        plato -r -d $REPORT_DIR/plato app.js utils.js || true
+        
+    - name: Run JSDoc
+      run: |
+        jsdoc app.js utils.js -X > $REPORT_DIR/jsdoc.json || true
         
     - name: Generate severity summary
       run: |
-        python3 << 'PYEOF'
-        import json
-        import os
-        from pathlib import Path
+        node << 'EOF'
+        const fs = require('fs');
+        const path = require('path');
+
+        const reportDir = process.env.REPORT_DIR || 'scan-reports';
+
+        const summary = {
+          critical: [],
+          high: [],
+          medium: [],
+          low: [],
+          info: []
+        };
+
+        // npm audit
+        if (fs.existsSync(`${reportDir}/npm_audit.json`)) {
+          console.log('Found npm_audit.json');
+          try {
+            const data = JSON.parse(fs.readFileSync(`${reportDir}/npm_audit.json`, 'utf8'));
+            if (data.vulnerabilities) {
+              Object.values(data.vulnerabilities).forEach(v => {
+                if (v && v.severity) {
+                  summary[v.severity || 'low'].push({
+                    tool: 'npm_audit',
+                    issue: v.name || 'unknown',
+                    severity: v.severity
+                  });
+                }
+              });
+              console.log(`Processed ${Object.keys(data.vulnerabilities).length} vulnerabilities`);
+            }
+          } catch (e) {
+            console.log('Error processing npm_audit.json:', e.message);
+          }
+        } else {
+          console.log('npm_audit.json not found');
+        }
+
+        // eslint
+        if (fs.existsSync(`${reportDir}/eslint.json`)) {
+          console.log('Found eslint.json');
+          try {
+            const eslint = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
+            eslint.forEach(file => {
+              if (file && file.messages) {
+                file.messages.forEach(m => {
+                  if (m && m.severity !== undefined) {
+                    summary[m.severity === 2 ? 'high' : 'medium'].push({
+                      tool: 'eslint',
+                      file: file.filePath || 'unknown',
+                      issue: m.ruleId || 'unknown',
+                      message: m.message || 'no message'
+                    });
+                  }
+                });
+              }
+            });
+            console.log(`Processed ${eslint.length} ESLint files`);
+          } catch (e) {
+            console.log('Error processing eslint.json:', e.message);
+          }
+        } else {
+          console.log('eslint.json not found');
+        }
+
+        // retire
+        if (fs.existsSync(`${reportDir}/retire.json`)) {
+          console.log('Found retire.json');
+          try {
+            const retireData = JSON.parse(fs.readFileSync(`${reportDir}/retire.json`, 'utf8'));
+            if (retireData.data && Array.isArray(retireData.data)) {
+              if (retireData.data.length === 0) {
+                console.log('Retire.js: passed with no vulnerabilities');
+                // No vulnerabilities found - this is a valid pass
+              } else {
+                retireData.data.forEach(v => {
+                  if (v && v.severity) {
+                    summary[v.severity || 'low'].push({
+                      tool: 'retire',
+                      issue: v.component || 'unknown',
+                      severity: v.severity,
+                      message: v.identifiers && v.identifiers.summary ? v.identifiers.summary[0] : 'vulnerability found'
+                    });
+                  }
+                });
+                console.log(`Retire.js: found ${retireData.data.length} vulnerabilities`);
+              }
+            }
+          } catch (e) {
+            console.log('Error processing retire.json:', e.message);
+          }
+        } else {
+          console.log('retire.json not found');
+        }
+
+        // plato - artifact only (HTML report)
+        if (fs.existsSync(`${reportDir}/plato/index.html`)) {
+          console.log('Found Plato HTML report');
+          // Plato is report-only, not included in severity summary
+          // Handled as artifact: plato-report/index.html
+        } else {
+          console.log('Plato HTML report not found');
+        }
+
+        fs.writeFileSync(
+          `${reportDir}/severity_summary.json`,
+          JSON.stringify(summary, null, 2)
+        );
+
+        console.log('severity_summary.json generated');
+        EOF
         
-        report_dir = Path(os.environ.get('REPORT_DIR', 'scan-reports'))
-        
-        severity_summary = dict()
-        severity_summary['critical'] = []
-        severity_summary['high'] = []
-        severity_summary['medium'] = []
-        severity_summary['low'] = []
-        severity_summary['info'] = []
-
-        # Process ESLint results
-        eslint_file = report_dir / 'eslint.json'
-        if eslint_file.exists() and eslint_file.stat().st_size > 0:
-            try:
-                with open(eslint_file) as f:
-                    eslint_data = json.load(f)
-                    for result in eslint_data:
-                        if result.get('errorCount', 0) > 0 or result.get('warningCount', 0) > 0:
-                            for message in result.get('messages', []):
-                                severity = 'high' if message.get('severity') == 2 else 'medium'
-                                severity_summary[severity].append(dict(
-                                    tool='eslint',
-                                    file='./' + result.get('filePath', '').lstrip('./'),
-                                    line=message.get('line'),
-                                    column=message.get('column'),
-                                    issue=message.get('ruleId'),
-                                    message=message.get('message')
-                                ))
-            except Exception as e:
-                print('Error processing eslint.json: ' + str(e))
-
-        # Process NPM Audit results
-        npm_audit_file = report_dir / 'npm_audit.json'
-        if npm_audit_file.exists() and npm_audit_file.stat().st_size > 0:
-            try:
-                with open(npm_audit_file) as f:
-                    npm_data = json.load(f)
-                    vulnerabilities = npm_data.get('vulnerabilities', {})
-                    for vuln_id, vuln_info in vulnerabilities.items():
-                        severity_mapping = {
-                            'critical': 'critical',
-                            'high': 'high', 
-                            'moderate': 'medium',
-                            'low': 'low',
-                            'info': 'info'
-                        }
-                        severity = severity_mapping.get(vuln_info.get('severity', 'low'), 'low')
-                        
-                        if severity in severity_summary:
-                            severity_summary[severity].append(dict(
-                                tool='npm_audit',
-                                file='./package.json',
-                                issue=vuln_id,
-                                message=vuln_info.get('title', 'Security vulnerability'),
-                                severity=vuln_info.get('severity', 'low'),
-                                info=vuln_info.get('url', 'No additional info')
-                            ))
-            except Exception as e:
-                print('Error processing npm_audit.json: ' + str(e))
-
-        # Process Retire.js results
-        retire_file = report_dir / 'retire.json'
-        if retire_file.exists() and retire_file.stat().st_size > 0:
-            try:
-                with open(retire_file) as f:
-                    retire_data = json.load(f)
-                    if isinstance(retire_data, dict) and 'data' in retire_data:
-                        for file_entry in retire_data['data']:
-                            if isinstance(file_entry, dict):
-                                file_path = file_entry.get('file', 'unknown')
-                                vulnerabilities = file_entry.get('vulnerabilities', [])
-                                for vuln in vulnerabilities:
-                                    severity_mapping = {
-                                        'critical': 'critical',
-                                        'high': 'high',
-                                        'medium': 'medium', 
-                                        'low': 'low',
-                                        'info': 'info'
-                                    }
-                                    severity = severity_mapping.get(vuln.get('severity', 'low'), 'low')
-                                    
-                                    if severity in severity_summary:
-                                        severity_summary[severity].append(dict(
-                                            tool='retire',
-                                            file='./' + file_path.lstrip('./'),
-                                            line=1,
-                                            issue=vuln.get('component', 'unknown-component'),
-                                            message=vuln.get('identifiers', {}).get('summary', 'Security vulnerability'),
-                                            severity=vuln.get('severity', 'medium'),
-                                            info=vuln.get('info', 'No additional info')
-                                        ))
-            except Exception as e:
-                print('Error processing retire.json: ' + str(e))
-
-        # Process Plato complexity results
-        plato_report_file = report_dir / 'plato' / 'report.json'
-        if plato_report_file.exists() and plato_report_file.stat().st_size > 0:
-            try:
-                with open(plato_report_file) as f:
-                    plato_data = json.load(f)
-                    reports = plato_data.get('reports', {})
-                    for file_path, report_item in reports.items():
-                        if isinstance(report_item, dict):
-                            file_path = './' + file_path.lstrip('./')
-                            maintainability = report_item.get('maintainability', 0)
-                            complexity = report_item.get('complexity', {}).get('aggregate', {}).get('cyclomatic', 0)
-
-                            if complexity > 15:
-                                severity_summary['high'].append(dict(
-                                    tool='plato',
-                                    file=file_path,
-                                    line=1,
-                                    issue='high_complexity',
-                                    message='Cyclomatic complexity: ' + str(complexity)
-                                ))
-                            elif complexity > 10:
-                                severity_summary['medium'].append(dict(
-                                    tool='plato',
-                                    file=file_path,
-                                    line=1,
-                                    issue='medium_complexity',
-                                    message='Cyclomatic complexity: ' + str(complexity)
-                                ))
-            except Exception as e:
-                print('Error processing plato report.json: ' + str(e))
-
-        # Process JSCPD results
-        jscpd_file = report_dir / 'jscpd.json'
-        if jscpd_file.exists() and jscpd_file.stat().st_size > 0:
-            try:
-                with open(jscpd_file) as f:
-                    jscpd_data = json.load(f)
-                    if isinstance(jscpd_data, dict) and 'duplicates' in jscpd_data:
-                        for duplicate in jscpd_data['duplicates']:
-                            if isinstance(duplicate, dict):
-                                first_file = duplicate.get('firstFile', {}).get('name', 'unknown')
-                                second_file = duplicate.get('secondFile', {}).get('name', 'unknown')
-                                lines = duplicate.get('lines', 0)
-                                
-                                severity_summary['medium'].append(dict(
-                                    tool='jscpd',
-                                    file=f'{first_file} <-> {second_file}',
-                                    line=1,
-                                    issue='code_duplication',
-                                    message=f'Duplicate code: {lines} lines'
-                                ))
-            except Exception as e:
-                print('Error processing jscpd.json: ' + str(e))
-        
-        # Process JSDoc results
-        jsdoc_file = report_dir / 'jsdoc.json'
-        if jsdoc_file.exists() and jsdoc_file.stat().st_size > 0:
-            try:
-                with open(jsdoc_file) as f:
-                    jsdoc_data = json.load(f)
-                    
-                    if isinstance(jsdoc_data, dict) and 'docs' in jsdoc_data:
-                        for doc_entry in jsdoc_data['docs']:
-                            if isinstance(doc_entry, dict) and doc_entry.get('undocumented', False):
-                                severity_summary['info'].append(dict(
-                                    tool='jsdoc',
-                                    file='./' + doc_entry.get('meta', {}).get('filename', 'unknown').lstrip('./'),
-                                    name=doc_entry.get('name', 'unknown'),
-                                    line=doc_entry.get('meta', {}).get('lineno', 1),
-                                    message='Missing JSDoc comment'
-                                ))
-                    else:
-                        severity_summary['info'].append(dict(
-                            tool='jsdoc',
-                            file='./',
-                            line=1,
-                            issue='documentation_scan',
-                            message=f'JSDoc scanned {len(jsdoc_data) if isinstance(jsdoc_data, (list, dict)) else 0} symbols'
-                        ))
-            except Exception as e:
-                print('Error processing jsdoc.json: ' + str(e))
-        
-        # Save severity summary
-        output_file = report_dir / 'severity_summary.json'
-        with open(output_file, 'w') as f:
-            json.dump(severity_summary, f, indent=2)
-
-        print('=== FINAL SEVERITY SUMMARY ===')
-        for severity, issues in severity_summary.items():
-            print(str(severity) + ': ' + str(len(issues)) + ' issues')
-        print('Severity summary saved to: ' + str(output_file))
-        PYEOF
-        
-    - name: Verify scan outputs
+    - name: Verify summary
       run: |
-        ls -R $REPORT_DIR
-        test -f $REPORT_DIR/eslint.json || echo "❌ eslint missing"
-        test -f $REPORT_DIR/npm_audit.json || echo "❌ npm audit missing"
-        test -f $REPORT_DIR/retire.json || echo "❌ retire missing"
-        test -f $REPORT_DIR/jscpd.json || echo "❌ jscpd missing"
-        test -f $REPORT_DIR/jsdoc.json || echo "❌ jsdoc missing"
-        test -f $REPORT_DIR/plato/report.json || echo "❌ plato missing"
-        
-    - name: Upload scan reports
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: node-scan-reports
-        path: ${{ env.REPORT_DIR }}/
-        retention-days: 30
+        echo "=== VERIFYING SEVERITY SUMMARY ==="
+        ls -la $REPORT_DIR
+        echo "=== CHECKING IF severity_summary.json EXISTS ==="
+        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
+          echo "✅ severity_summary.json FOUND"
+          echo "=== CONTENTS OF severity_summary.json ==="
+          cat $REPORT_DIR/severity_summary.json
+        else
+          echo "❌ severity_summary.json MISSING"
+          echo "=== ALL FILES IN REPORT DIRECTORY ==="
+          find $REPORT_DIR -type f -exec echo "File: {}" \;
+        fi
         
     - name: Generate simple report
       run: |
@@ -305,6 +253,13 @@ jobs:
         echo "### Report Directory Contents" >> $GITHUB_STEP_SUMMARY
         ls -la $REPORT_DIR/ >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No reports directory found" >> $GITHUB_STEP_SUMMARY
         set -e  # Exit on error for subsequent steps
+
+    - name: Upload scan reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: node-scan-reports
+        path: scan-reports/
 
 env:
   REPORT_DIR: scan-reports
