@@ -107,6 +107,74 @@ jobs:
       run: |
         jsdoc app.js utils.js -X > $REPORT_DIR/jsdoc.json || true
         
+    - name: Generate severity summary
+      run: |
+        node << 'EOF'
+        const fs = require('fs');
+        const path = require('path');
+
+        const reportDir = process.env.REPORT_DIR || 'scan-reports';
+
+        const summary = {
+          critical: [],
+          high: [],
+          medium: [],
+          low: [],
+          info: []
+        };
+
+        // npm audit
+        if (fs.existsSync(`${reportDir}/npm_audit.json`)) {
+          const data = JSON.parse(fs.readFileSync(`${reportDir}/npm_audit.json`, 'utf8'));
+          if (data.vulnerabilities) {
+            Object.values(data.vulnerabilities).forEach(v => {
+              summary[v.severity || 'low'].push({
+                tool: 'npm_audit',
+                issue: v.name,
+                severity: v.severity
+              });
+            });
+          }
+        }
+
+        // eslint
+        if (fs.existsSync(`${reportDir}/eslint.json`)) {
+          const eslint = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
+          eslint.forEach(file => {
+            file.messages.forEach(m => {
+              summary[m.severity === 2 ? 'high' : 'medium'].push({
+                tool: 'eslint',
+                file: file.filePath,
+                issue: m.ruleId,
+                message: m.message
+              });
+            });
+          });
+        }
+
+        fs.writeFileSync(
+          `${reportDir}/severity_summary.json`,
+          JSON.stringify(summary, null, 2)
+        );
+
+        console.log('severity_summary.json generated');
+        EOF
+        
+    - name: Verify summary
+      run: |
+        echo "=== VERIFYING SEVERITY SUMMARY ==="
+        ls -la $REPORT_DIR
+        echo "=== CHECKING IF severity_summary.json EXISTS ==="
+        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
+          echo "✅ severity_summary.json FOUND"
+          echo "=== CONTENTS OF severity_summary.json ==="
+          cat $REPORT_DIR/severity_summary.json
+        else
+          echo "❌ severity_summary.json MISSING"
+          echo "=== ALL FILES IN REPORT DIRECTORY ==="
+          find $REPORT_DIR -type f -exec echo "File: {}" \;
+        fi
+        
     - name: Generate simple report
       run: |
         set +e  # Don't exit on error
