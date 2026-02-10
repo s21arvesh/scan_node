@@ -1,18 +1,12 @@
 {
-  "name": "scan_node",
+  "name": "node-scan-test",
   "version": "1.0.0",
-  "description": "Node.js scan test repository",
-  "main": "app.js",
-  "scripts": {
-    "start": "node app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "description": "Intentionally vulnerable Node.js project for security scanning",
+  "main": "index.js",
   "dependencies": {
-    "express": "4.16.4",
     "lodash": "4.17.20",
-    "request": "2.88.2"
-  },
-  "devDependencies": {
-    "eslint": "^7.0.0"
+    "express": "4.16.0",
+    "minimist": "0.0.8",
+    "jquery": "3.4.0"
   }
 }
