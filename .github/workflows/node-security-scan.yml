@@ -73,7 +73,7 @@ jobs:
         echo "PATH=$PATH:/usr/local/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_ENV
         
         # Install any additional complex tools dynamically
-        npm install -g plato retire jscpd eslint jsdoc npm
+        npm install -g retire jscpd jsdoc eslint npm plato
 
     - name: Create report directory
       run: mkdir -p $REPORT_DIR
@@ -89,11 +89,8 @@ jobs:
         echo "JavaScript files found:"
         find . -name '*.js' -not -path './node_modules/*' -type f | head -20 || echo "No JS files found"
         echo "=== Running Scan Commands ==="
-                # Plato
-        plato -r -x 'node_modules' -d $REPORT_DIR/plato-report . || true
-
-        # Trivy
-        trivy fs --format json --output $REPORT_DIR/trivy.json . 2>/dev/null || echo '{"Results": []}' > $REPORT_DIR/trivy.json
+                # Syft SBOM
+        syft . -o json=$REPORT_DIR/syft.json 2>/dev/null || echo '{"artifacts": []}' > $REPORT_DIR/syft.json
 
         # Retire.js
         retire --js --nodepath node_modules --outputformat json --outputpath $REPORT_DIR/retire.json . || true
@@ -104,21 +101,24 @@ jobs:
         # JSCPD
         jscpd . --reporters json --output $REPORT_DIR --min-lines 3 --min-tokens 25 --ignore "node_modules" || true
 
-        # ESLint
-        eslint . --no-eslintrc -c .eslintrc.json -f json -o $REPORT_DIR/eslint.json --ignore-pattern node_modules/ || true
-
         # JSDoc
         find . -maxdepth 2 -name '*.js' -not -path './node_modules/*' | head -50 | xargs jsdoc -X > $REPORT_DIR/jsdoc.json 2>/dev/null || true
 
-        # Grype
-        grype dir:. -o json > $REPORT_DIR/grype.json 2>/dev/null || echo '{"matches": []}' > $REPORT_DIR/grype.json
-
-        # Syft SBOM
-        syft . -o json=$REPORT_DIR/syft.json 2>/dev/null || echo '{"artifacts": []}' > $REPORT_DIR/syft.json
+        # ESLint
+        eslint . --no-eslintrc -c .eslintrc.json -f json -o $REPORT_DIR/eslint.json --ignore-pattern node_modules/ || true
 
         # NPM Audit
         npm install --package-lock-only || true
         npm audit --json > $REPORT_DIR/npm_audit.json || true
+
+        # Trivy
+        trivy fs --format json --output $REPORT_DIR/trivy.json . 2>/dev/null || echo '{"Results": []}' > $REPORT_DIR/trivy.json
+
+        # Grype
+        grype dir:. -o json > $REPORT_DIR/grype.json 2>/dev/null || echo '{"matches": []}' > $REPORT_DIR/grype.json
+
+        # Plato
+        plato -r -x 'node_modules' -d $REPORT_DIR/plato-report . || true
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents:"
         ls -la $REPORT_DIR/ || echo "Report directory not accessible"
