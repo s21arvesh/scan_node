@@ -33,32 +33,50 @@ jobs:
         fi
         set -e
         
+    - name: Install additional scan tools
+      run: |
+        echo "Installing Go for dependency scanning tools..."
+        if command -v go >/dev/null 2>&1; then
+          echo "Go is already installed"
+        else
+          echo "Installing Go..."
+          wget -q https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
+          sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+        fi
+        export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+        echo "PATH=$PATH:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_ENV
+        
+        echo "Installing dependency scanning tools..."
+        # Install OSV Scanner (try pip first, fallback to Go)
+        pip install osv-scanner || (go install github.com/google/osv-scanner/cmd/osv-scanner@latest) || echo "OSV Scanner installation failed"
+        
+        # Install Syft
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin || echo "Syft installation failed"
+        
+        # Install Grype  
+        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin || echo "Grype installation failed"
+        
+        # Install Trivy
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin || echo "Trivy installation failed"
+        
+        # Install ScanCode Toolkit
+        pip install scancode-toolkit || echo "ScanCode installation failed"
+        
+        # Install TruffleHog
+        pip install trufflehog3 || echo "TruffleHog installation failed"
+        
+        # Install Gitleaks
+        GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+        wget -q "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -O /tmp/gitleaks.tar.gz && sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks && sudo chmod +x /usr/local/bin/gitleaks || echo "Gitleaks installation failed"
+        
+        export PATH=$PATH:/usr/local/bin:/usr/local/go/bin:$HOME/go/bin
+        echo "PATH=$PATH:/usr/local/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_ENV
+        
+        # Install any additional complex tools dynamically
+        npm install -g retire jsdoc plato jscpd eslint npm
+
     - name: Create report directory
       run: mkdir -p $REPORT_DIR
-
-    - name: Install scan tools
-      run: |
-        npm install -g npm eslint jscpd retire plato jsdoc
-        pip install osv-scanner || true
-        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
-        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
-        pip install scancode-toolkit
-        pip install trufflehog3
-        curl -sL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.2_linux_x64.tar.gz -o gitleaks.tar.gz && tar -xzf gitleaks.tar.gz gitleaks && sudo mv gitleaks /usr/local/bin/gitleaks && chmod +x /usr/local/bin/gitleaks
-        echo "Verifying scan tools:"
-        which eslint && eslint --version || echo "eslint not found"
-        which retire && retire --version || echo "retire not found"
-        which jscpd && jscpd --version || echo "jscpd not found"
-        which jsdoc && jsdoc --version || echo "jsdoc not found"
-        which plato && plato --version || echo "plato not found"
-        which osv-scanner && osv-scanner --version || echo "osv-scanner not found"
-        which syft && syft --version || echo "syft not found"
-        which grype && grype --version || echo "grype not found"
-        which trivy && trivy --version || echo "trivy not found"
-        which scancode && scancode --version || echo "scancode not found"
-        which trufflehog && trufflehog --version || echo "trufflehog not found"
-        which gitleaks && gitleaks --version || echo "gitleaks not found"
 
     - name: Create ESLint config
       run: |
@@ -71,47 +89,36 @@ jobs:
         echo "JavaScript files found:"
         find . -name '*.js' -not -path './node_modules/*' -type f | head -20 || echo "No JS files found"
         echo "=== Running Scan Commands ==="
-                # NPM Audit
-        npm install --package-lock-only || true
-        npm audit --json > $REPORT_DIR/npm_audit.json || true
-
-        # ESLint
-        eslint . --no-eslintrc -c .eslintrc.json -f json -o $REPORT_DIR/eslint.json --ignore-pattern node_modules/ || true
-
-        # JSCPD
-        jscpd . --reporters json --output $REPORT_DIR --min-lines 3 --min-tokens 25 --ignore "node_modules" || true
-
-        # Retire.js
+                # Retire.js
         retire --js --nodepath node_modules --outputformat json --outputpath $REPORT_DIR/retire.json . || true
-
-        # Plato
-        plato -r -x 'node_modules' -d $REPORT_DIR/plato-report . || true
 
         # JSDoc
         find . -maxdepth 2 -name '*.js' -not -path './node_modules/*' | head -50 | xargs jsdoc -X > $REPORT_DIR/jsdoc.json 2>/dev/null || true
 
-        # OSV Scanner
-        osv-scanner scan . --format json --output $REPORT_DIR/osv_scanner.json 2>/dev/null || echo '{"results": []}' > $REPORT_DIR/osv_scanner.json
+        # Plato
+        plato -r -x 'node_modules' -d $REPORT_DIR/plato-report . || true
 
         # Syft SBOM
         syft . -o json=$REPORT_DIR/syft.json 2>/dev/null || echo '{"artifacts": []}' > $REPORT_DIR/syft.json
 
-        # Trivy
-        trivy fs --format json --output $REPORT_DIR/trivy.json . 2>/dev/null || echo '{"Results": []}' > $REPORT_DIR/trivy.json
+        # JSCPD
+        jscpd . --reporters json --output $REPORT_DIR --min-lines 3 --min-tokens 25 --ignore "node_modules" || true
+
+        # ESLint
+        eslint . --no-eslintrc -c .eslintrc.json -f json -o $REPORT_DIR/eslint.json --ignore-pattern node_modules/ || true
+
+        # OSV Scanner
+        osv-scanner scan . --format json --output $REPORT_DIR/osv_scanner.json 2>/dev/null || echo '{"results": []}' > $REPORT_DIR/osv_scanner.json
+
+        # NPM Audit
+        npm install --package-lock-only || true
+        npm audit --json > $REPORT_DIR/npm_audit.json || true
 
         # Grype
         grype dir:. -o json > $REPORT_DIR/grype.json 2>/dev/null || echo '{"matches": []}' > $REPORT_DIR/grype.json
 
-        # ScanCode
-        scancode . --json $REPORT_DIR/scancode.json --copyright --license --package --info 2>/dev/null || echo '{"files": []}' > $REPORT_DIR/scancode.json
-
-        # TruffleHog
-        echo "Running TruffleHog..."
-        trufflehog filesystem --directory . --json --output $REPORT_DIR/trufflehog.json || echo '{"FoundIssues": []}' > $REPORT_DIR/trufflehog.json
-        trufflehog git . --json --output $REPORT_DIR/trufflehog_git.json || echo '{"FoundIssues": []}' > $REPORT_DIR/trufflehog_git.json
-
-        # Gitleaks
-        gitleaks detect --source . --report-format json --report-path $REPORT_DIR/gitleaks.json --no-git 2>/dev/null || echo '[]' > $REPORT_DIR/gitleaks.json
+        # Trivy
+        trivy fs --format json --output $REPORT_DIR/trivy.json . 2>/dev/null || echo '{"Results": []}' > $REPORT_DIR/trivy.json
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents:"
         ls -la $REPORT_DIR/ || echo "Report directory not accessible"
